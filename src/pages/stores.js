@@ -1,13 +1,28 @@
-import Head from 'next/head'
-import { FaExternalLinkAlt } from 'react-icons/fa';
+import { useState } from "react";
+import Head from "next/head";
+import { FaExternalLinkAlt } from "react-icons/fa";
 
-import Layout from '@components/Layout';
-import Container from '@components/Container';
-import Button from '@components/Button';
+import Layout from "@components/Layout";
+import Container from "@components/Container";
+import Button from "@components/Button";
+import Map from "@components/Map";
+import { ApolloClient, InMemoryCache, gql } from "@apollo/client";
+import center from "@turf/center";
+import { points } from "@turf/helpers";
 
-import styles from '@styles/Page.module.scss'
+import styles from "@styles/Page.module.scss";
+import { useEffect } from "react/cjs/react.production.min";
 
-export default function Stores() {
+export default function Stores({ storeLocations }) {
+  const features = points(
+    storeLocations.map(({ location }) => {
+      return [location.latitude, location.longitude];
+    })
+  );
+  const [centerLat, centerLong] = center(features)?.geometry.coordinates;
+
+  const [activeStore, setActiveStore] = useState();
+
   return (
     <Layout>
       <Head>
@@ -19,41 +34,111 @@ export default function Stores() {
         <h1>Locations</h1>
 
         <div className={styles.stores}>
-
           <div className={styles.storesLocations}>
             <ul className={styles.locations}>
-              <li>
-                <p className={styles.locationName}>
-                  Name
-                </p>
-                <address>
-                  Address
-                </address>
-                <p>
-                  1234567890
-                </p>
-                <p className={styles.locationDiscovery}>
-                  <button>
-                    View on Map
-                  </button>
-                  <a href="https://www.google.com/maps/" target="_blank" rel="noreferrer">
-                    Get Directions
-                    <FaExternalLinkAlt />
-                  </a>
-                </p>
-              </li>
+              {storeLocations.map((location) => {
+                const handleOnClick = () => {
+                  setActiveStore(location);
+                };
+                return (
+                  <li key={location.id}>
+                    <p className={styles.locationName}>{location.name}</p>
+                    <address>{location.address}</address>
+                    <p>{location.phoneNumber}</p>
+                    <p className={styles.locationDiscovery}>
+                      <button onClick={handleOnClick}>View on Map</button>
+                      <a
+                        href={`https://www.google.com/maps/dir//${location.location.latitude},${location.location.longitude}/@${location.location.latitude},${location.location.longitude},12z/`}
+                        target="_blank"
+                        rel="noreferrer"
+                      >
+                        Get Directions
+                        <FaExternalLinkAlt />
+                      </a>
+                    </p>
+                  </li>
+                );
+              })}
             </ul>
           </div>
 
           <div className={styles.storesMap}>
             <div className={styles.storesMapContainer}>
-              <div className={styles.map}>
-                Map
-              </div>
+              <Map
+                className={styles.map}
+                center={[centerLat, centerLong]}
+                zoom={13}
+                scrollWheelZoom={false}
+              >
+                {({ TileLayer, Marker, Popup }, map) => {
+                  return (
+                    <>
+                      <MapEffect map={map} store={activeStore} />
+                      <TileLayer
+                        attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                        url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                      />
+                      {storeLocations.map((location) => (
+                        <Marker
+                          position={[
+                            location.location.latitude,
+                            location.location.longitude,
+                          ]}
+                          key={location.id}
+                        >
+                          <Popup>
+                            <p>{location.name}</p>
+                            <p>{location.address}</p>
+                          </Popup>
+                        </Marker>
+                      ))}
+                    </>
+                  );
+                }}
+              </Map>
             </div>
           </div>
         </div>
       </Container>
     </Layout>
-  )
+  );
+}
+
+function MapEffect({ map, store }) {
+  if (!store || !map) return null;
+  const {
+    location: { latitude, longitude },
+  } = store;
+  map.setView([latitude, longitude], 16);
+  return null;
+}
+
+export async function getStaticProps() {
+  const client = new ApolloClient({
+    uri: "https://api-ap-southeast-2.graphcms.com/v2/cl201gs0b2vrh01xu78h65x10/master",
+    cache: new InMemoryCache(),
+  });
+  const data = await client.query({
+    query: gql`
+      query PageStroes {
+        storeLocations {
+          id
+          name
+          phoneNumber
+          address
+          location {
+            latitude
+            longitude
+          }
+        }
+      }
+    `,
+  });
+  const storeLocations = data.data.storeLocations;
+
+  return {
+    props: {
+      storeLocations,
+    },
+  };
 }
